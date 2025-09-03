@@ -379,4 +379,3 @@ ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
 /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
