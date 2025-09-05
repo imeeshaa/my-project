@@ -18,9 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "string.h"
 #include "stdarg.h"
 #include "stdio.h"
+#include "string.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -47,7 +47,6 @@ I2C_HandleTypeDef hi2c1;
 
 SPI_HandleTypeDef hspi1;
 
-UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 PCD_HandleTypeDef hpcd_USB_FS;
@@ -56,29 +55,27 @@ PCD_HandleTypeDef hpcd_USB_FS;
 
 // for task 1
 void myprintf(const char *fmt, ...){
-  char buffer[100];
-  va_list args;
-  va_start(args,fmt);
-  vsnprintf(buffer, sizeof(buffer),fmt, args);
-  va_end(args);
-  HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
-  HAL_Delay(500);
+  char buffer[135];   // buffer to store string
+  va_list args;       //variable list of arguments
+  va_start(args,fmt); //variable list of arguments with format
+  vsnprintf(buffer, sizeof(buffer),fmt, args); //ensures buffer is not overloaded
+  va_end(args);  //cleans up the argument list
+
+  
+
+  printf("%s",buffer); //prints the buffer
+  HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY); // transmits the string to uart
 }
 
+
 /* USER CODE END PV */
- 
 
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_USART1_UART_Init(void);
 static void MX_USB_PCD_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -121,7 +118,6 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI1_Init();
   MX_USART2_UART_Init();
-  MX_USART1_UART_Init();
   MX_USB_PCD_Init();
   /* USER CODE BEGIN 2 */
 
@@ -129,41 +125,111 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+    int x=4; float y=3.14;
+    // task # 3
 
-  // Task 0
-  // char msg[] = "Hello World\r\n";
+    char str[]="Micro"; //string to be encrypted
+    int key=9208;
+    char encrypt[6];
+    char decrypt[6];
+    for (int i=0; i<5; i++){
+        char ch=str[i];
+        ch=(ch) + (key%256);
+        encrypt[i]=ch;  //encrypted string
+        
+    }
+    encrypt[5]='\0'; //null terminator
 
-//    while (1)
-//   {
     
-//   HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-//   HAL_Delay(1000); 
+    for (int i=0; i<5; i++){
+        char ch= encrypt[i];
+        ch=(ch) - (key%256);
+        decrypt[i]=ch; // decrypted stringS
+        
+    }
+        decrypt[5]='\0'; //null terminator
 
-// }
+        
+    // task # 2    
+    int a=3; int b=2;
+    int LHS=(a+b)*(a+b);
+    int RHS= (a*a)+(2*a*b)+(b*b);
+    
+
+    int A[2][2]={{2,2},{3,3}};
+    int B[2][2]={{4,4},{5,5}};
+    int C[2][2];
+    
+    //initializing result to 0
+    for (int i=0; i<2; i++){
+    for (int j=0; j<2; j++){
+        C[i][j]=0;}}
+        
+        
+        
+    //multiplying the matrices
+    for (int i=0; i<2; i++){
+        for (int j=0; j<2; j++){
+            for (int k=0; k<2; k++){
+            C[i][j]+=A[i][k]*B[i][k];}
+        }
+    }
+
+
+  while (1)
+  {
+    // task # 1
+    //myprintf("Value of x = %d\r\n", x);
+    //myprintf("Value of y = %f\r\n", y);
+
+    // task 2
+    /*if (LHS==RHS){
+      myprintf("%s\r\n","LHS=RHS");
+      myprintf("LHS%d=\r",LHS);
+      myprintf("RHS%d=\r\n",RHS);
+    }*/
+
+
+    //task 3 
+    // myprintf("%s\r\n", encrypt);
+    // myprintf("%s\r\n", decrypt);
+    
+    
+
+  // task # 5
+  for (int i=100; i<1000; i++){
+        int temp=i;
+        int original=0;
+      while (temp != 0){
+          int k=temp%10;
+          temp=temp/10;
+          int y=(k*k*k);
+          original+=y;
+      }
+      if (i==original){
+          myprintf("%d\r\n",i);
+          
+      }
+
+       //task 4
+    /*
+    for (int i=0; i<2; i++){
+    for (int j=0; j<2; j++){
+        printf("%d\t",C[i][j]);}
+        printf("\n");
+    */
+ 
+    
+    }
+            
+  HAL_Delay(1000);
 
 
 
-// Task # 1
 
-int x = 42;
-float y = 3.14;
-while(1){
-myprintf ("Value of x = 42, y = 3.14\r\n");
+    }
+
 }
-
-// int a = 2;
-// int b = 3;
-// int LHS = (a + b) * (a + b);
-// int RHS = (a*a) + (b*b) + (2*a*b);
-// while (1) {
-// myprintf("a = %d, b = %d\r\n", a, b);
-// myprintf("LHS: %d\r\n", LHS);
-// myprintf("RHS: %d\r\n", RHS);
-  //myprintf ("a = 2, b = 3 \n LHS = 25 \n RHS = 25 \n Identity Verified: Yes");}
-
-}
-
-
 
 /**
   * @brief System Clock Configuration
@@ -204,9 +270,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART1
-                              |RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_I2C1;
-  PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART2
+                              |RCC_PERIPHCLK_I2C1;
   PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
   PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
   PeriphClkInit.USBClockSelection = RCC_USBCLKSOURCE_PLL;
@@ -232,7 +297,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x2000090E;
+  hi2c1.Init.Timing = 0x00201D2B;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -301,41 +366,6 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
-  * @brief USART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART1_Init 0 */
-
-  /* USER CODE END USART1_Init 0 */
-
-  /* USER CODE BEGIN USART1_Init 1 */
-
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART1_Init 2 */
-
-  /* USER CODE END USART1_Init 2 */
 
 }
 
