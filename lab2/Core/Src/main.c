@@ -197,7 +197,7 @@ int main(void)
     
 
   // task # 5
-  for (int i=100; i<1000; i++){
+  /*for (int i=100; i<1000; i++){
         int temp=i;
         int original=0;
       while (temp != 0){
@@ -209,15 +209,15 @@ int main(void)
       if (i==original){
           myprintf("%d\r\n",i);
           
-      }
+      }*/
 
        //task 4
-    /*
+    
     for (int i=0; i<2; i++){
     for (int j=0; j<2; j++){
-        printf("%d\t",C[i][j]);}
-        printf("\n");
-    */
+        myprintf("%d\t",C[i][j]);}
+        myprintf("\n");
+    
  
     
     }
