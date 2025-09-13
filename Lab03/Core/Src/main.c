@@ -29,6 +29,8 @@
 #define SEG_PORT GPIOB
 #define BUTTON_Pin GPIO_PIN_0
 #define BUTTON_GPIO_Port GPIOA
+#define EXT_BUTTON GPIO_PIN_1
+#define EXT_BUTTON_GPIO_PORT GPIOB
 
 
 // All segment pins combined for easy clearing
@@ -218,7 +220,7 @@ uint8_t array_index = 0;
         }
   }*/
 
-/* Task # 4
+ /*Task # 4
 while(1){
   if (HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin)==GPIO_PIN_RESET) {
     HAL_Delay(50);
@@ -233,10 +235,43 @@ while(1){
 }*/
 
 
+//Task # 3
 
+uint8_t array[]={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+uint8_t index=0;
+
+while (1){
+  if (HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin)==GPIO_PIN_RESET) {
+    HAL_Delay(50);
+    while (HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin) == GPIO_PIN_RESET);
+    index--;
+
+    if (index >= sizeof(array) / sizeof(array[0])) {
+                index = 0; // Loop back to the beginning
+            }
+            display_number(array[index]);
+        }
+
+  if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1) == GPIO_PIN_RESET) {
+    HAL_Delay(50);
+    while(HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1) == GPIO_PIN_RESET);
+    index++;
+  }
+
+  if (index >= sizeof(array) / sizeof(array[0])) {
+                index = 0; // Loop back to the beginning
+            }
+            display_number(array[index]);
+        }
 
 
 }
+
+
+
+
+
+
 
 /**
   * @brief System Clock Configuration
