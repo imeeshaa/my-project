@@ -51,6 +51,20 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+
+// uint8_t number_array[] = {0, 8, 9, 7, 5};
+// uint8_t array_index = 0;
+// const uint8_t array_size = sizeof(number_array) / sizeof(number_array[0]);
+
+const uint8_t seven_segment_patterns[] = {
+        0x40, // 0
+        0x00, // 8
+        0x10, // 9
+        0x78, // 7
+        0x12, // 5
+        
+    };
+
 SPI_HandleTypeDef hspi1;
 
 UART_HandleTypeDef huart2;
@@ -169,21 +183,30 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    for (uint8_t i = 0; i <= 15; i++) {
-        display_number(i);
-        HAL_Delay(2000); // 2 second delay
-    }
-  }
-  /* USER CODE END 3 */
-}
+
+  // TASK 1 COMPLETE
+//   while (1)
+//   {
+//     for (uint8_t i = 0; i <= 15; i++) {
+//         display_number(i);
+//         HAL_Delay(2000); // 2 second delay
+//     }
+//   }
+//   /* USER CODE END 3 */
+// }
+
+ // TASK 2
+  uint8_t number_array[] = {1, 5, 9, 2, 7}; // Your array of numbers
+    uint8_t array_index = 0;
+    uint32_t last_button_press_time = 0;
+    const uint32_t debounce_delay = 100; // milliseconds
+
 
 /**
   * @brief System Clock Configuration
   * @retval None
   */
-void SystemClock_Config(void)
+void SystemClock_Config(void);
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
@@ -231,7 +254,7 @@ void SystemClock_Config(void)
   * @param None
   * @retval None
   */
-static void MX_SPI1_Init(void)
+static void MX_SPI1_Init(void);
 {
 
   /* USER CODE BEGIN SPI1_Init 0 */
