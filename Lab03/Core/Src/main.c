@@ -18,7 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
 #define SEG_A_PIN GPIO_PIN_3
 #define SEG_B_PIN GPIO_PIN_4
 #define SEG_C_PIN GPIO_PIN_5
@@ -30,6 +29,20 @@
 
 // All segment pins combined for easy clearing
 #define ALL_SEGMENTS (SEG_A_PIN | SEG_B_PIN | SEG_C_PIN | SEG_D_PIN | SEG_E_PIN | SEG_F_PIN | SEG_G_PIN)
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ---/;---------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -40,6 +53,8 @@
 /* Private variables ---------------------------------------------------------*/
 SPI_HandleTypeDef hspi1;
 
+UART_HandleTypeDef huart2;
+
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
@@ -47,22 +62,22 @@ PCD_HandleTypeDef hpcd_USB_FS;
 // Bit positions: G F E D C B A (LSB)
 // 1 = segment ON, 0 = segment OFF (for common cathode)
 const uint8_t hex_patterns[16] = {
-    0x3F, // 0: A B C D E F
-    0x06, // 1: B C
-    0x5B, // 2: A B G E D
-    0x4F, // 3: A B G C D
-    0x66, // 4: F G B C
-    0x6D, // 5: A F G C D
-    0x7D, // 6: A F G E D C
-    0x07, // 7: A B C
-    0x7F, // 8: A B C D E F G
-    0x6F, // 9: A B C D F G
-    0x77, // A: A B C E F G
-    0x7C, // b: F G E D C
-    0x39, // C: A F E D
-    0x5E, // d: B G E D C
-    0x79, // E: A F G E D
-    0x71  // F: A F G E
+    0x40, // 0: A B C D E F
+    0x79, // 1: B C
+    0x24, // 2: A B G E D
+    0x30, // 3: A B G C D
+    0x19, // 4: F G B C
+    0x12, // 5: A F G C D
+    0x02, // 6: A F G E D C
+    0x78, // 7: A B C
+    0x00, // 8: A B C D E F G
+    0x10, // 9: A B C D F G
+    0x08, // A: A B C E F G
+    0x03, // b: F G E D C
+    0x46, // C: A F E D
+    0x21, // d: B G E D C
+    0x06, // E: A F G E D 
+    0x0E  // F: A F G E
 };
 /* USER CODE END PV */
 
@@ -71,6 +86,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USB_PCD_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void display_number(uint8_t num);
 void clear_display(void);
@@ -119,53 +135,6 @@ void clear_display(void) {
   * @brief  The application entry point.
   * @retval int
   */
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
-/* USER CODE END Includes */
-
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-SPI_HandleTypeDef hspi1;
-
-PCD_HandleTypeDef hpcd_USB_FS;
-
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_SPI1_Init(void);
-static void MX_USB_PCD_Init(void);
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
 int main(void)
 {
 
@@ -193,6 +162,7 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI1_Init();
   MX_USB_PCD_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -247,7 +217,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART2;
+  PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
   PeriphClkInit.USBClockSelection = RCC_USBCLKSOURCE_PLL;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
@@ -292,6 +263,41 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
 
 }
 
