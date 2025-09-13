@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "stdlib.h"
 #define SEG_A_PIN GPIO_PIN_3
 #define SEG_B_PIN GPIO_PIN_4
 #define SEG_C_PIN GPIO_PIN_5
@@ -33,6 +34,7 @@
 // All segment pins combined for easy clearing
 #define ALL_SEGMENTS (SEG_A_PIN | SEG_B_PIN | SEG_C_PIN | SEG_D_PIN | SEG_E_PIN | SEG_F_PIN | SEG_G_PIN)
 
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -43,7 +45,7 @@
 
 /* USER CODE END PTD */
 
-/* Private define ---/;---------------------------------------------------------*/
+/* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
 /* USER CODE END PD */
@@ -54,20 +56,6 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-
-// uint8_t number_array[] = {0, 8, 9, 7, 5};
-// uint8_t array_index = 0;
-// const uint8_t array_size = sizeof(number_array) / sizeof(number_array[0]);
-
-const uint8_t seven_segment_patterns[] = {
-        0x40, // 0
-        0x00, // 8
-        0x10, // 9
-        0x78, // 7
-        0x12, // 5
-        
-    };
-
 SPI_HandleTypeDef hspi1;
 
 UART_HandleTypeDef huart2;
@@ -97,6 +85,16 @@ const uint8_t hex_patterns[16] = {
     0x0E  // F: A F G E
 };
 /* USER CODE END PV */
+
+const uint8_t seven_segment_patterns[] = {
+        0x40, // 0
+        0x00, // 8
+        0x10, // 9
+        0x78, // 7
+        0x12, // 5
+        
+    };
+
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -169,7 +167,7 @@ int main(void)
   /* USER CODE END Init */
 
   /* Configure the system clock */
-  //SystemClock_Config();
+  SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
 
@@ -187,26 +185,28 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-  // TASK 1 COMPLETE
-  //  while (1)
-  //  {
-  //    for (uint8_t i = 0; i <= 15; i++) {
-  //        display_number(i);
-  //        HAL_Delay(2000); // 2 second delay
-  //    }
-  //  }
-//   /* USER CODE END 3 */
- 
+  /*TASK 1 COMPLETE
+   while (1)
+   {
+     for (uint8_t i = 0; i <= 15; i++) {
+         display_number(i);
+         HAL_Delay(2000); // 2 second delay
+     }
+   }
+  */
 
-//  // TASK 2
 
-uint8_t number_array[] = {0, 8, 9, 7, 5}; // Your array of numbers
-     uint8_t array_index = 0;
-     //uint32_t last_button_press_time = 0;
-     //const uint32_t debounce_delay = 100; // milliseconds
-while (1) {
 
-        if (HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin) == GPIO_PIN_RESET) { // Assuming button pulls low on press
+
+
+//Task # 2
+/*uint8_t number_array[] = {0, 8, 9, 7, 5}; // Your array of numbers
+uint8_t array_index = 0;
+
+
+  while (1)
+  {
+    if (HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin) == GPIO_PIN_RESET) { // Assuming button pulls low on press
             HAL_Delay(50); // Simple debouncing delay
             while (HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin) == GPIO_PIN_RESET); // Wait for button release
 
@@ -216,14 +216,78 @@ while (1) {
             }
             display_number(number_array[array_index]);
         }
-    }
+  }*/
 
-   
+/* Task # 4
+while(1){
+  if (HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin)==GPIO_PIN_RESET) {
+    HAL_Delay(50);
+    while (HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin) == GPIO_PIN_RESET);
+      for (int i=1; i<=6; i++){
+        int num = rand() % 6 + 1;
+        display_number(num);
+      }
+    
+  }
 
-} 
+}*/
+
+
+
+
+
+}
 
 /**
   * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL6;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART2;
+  PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
+  PeriphClkInit.USBClockSelection = RCC_USBCLKSOURCE_PLL;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief SPI1 Initialization Function
+  * @param None
   * @retval None
   */
 static void MX_SPI1_Init(void)
@@ -381,6 +445,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PB1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PB10 PB3 PB4 PB5
                            PB6 PB7 PB8 PB9 */
