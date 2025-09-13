@@ -1,6 +1,6 @@
-set(CMAKE_HOST_SYSTEM "Linux-6.8.0-65-generic")
+set(CMAKE_HOST_SYSTEM "Linux-6.8.0-79-generic")
 set(CMAKE_HOST_SYSTEM_NAME "Linux")
-set(CMAKE_HOST_SYSTEM_VERSION "6.8.0-65-generic")
+set(CMAKE_HOST_SYSTEM_VERSION "6.8.0-79-generic")
 set(CMAKE_HOST_SYSTEM_PROCESSOR "x86_64")
 
 include("/home/administrator/my-project/Lab03/cmake/gcc-arm-none-eabi.cmake")
