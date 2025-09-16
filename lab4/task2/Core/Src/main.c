@@ -82,6 +82,8 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+
+
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -107,10 +109,14 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+
+  HAL_TIM_Base_Start_IT (&htim2);
+
   while (1)
   {
     /* USER CODE END WHILE */
-
+    
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -271,9 +277,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 0;
+  htim2.Init.Prescaler = 47999;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
+  htim2.Init.Period = 999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -390,6 +396,13 @@ static void MX_GPIO_Init(void)
   * @brief  This function is executed in case of error occurrence.
   * @retval None
   */
+
+
+void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim) 
+{
+   if (htim -> Instance == TIM2) ;
+   HAL_GPIO_TogglePin(GPIOE, LD10_Pin);
+}
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
