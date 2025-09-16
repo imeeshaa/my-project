@@ -1,0 +1,6 @@
+/home/administrator/my-project/lab4/task2/CMakeFiles/task2.dir
+/home/administrator/my-project/lab4/task2/CMakeFiles/edit_cache.dir
+/home/administrator/my-project/lab4/task2/CMakeFiles/rebuild_cache.dir
+/home/administrator/my-project/lab4/task2/cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir
+/home/administrator/my-project/lab4/task2/cmake/stm32cubemx/CMakeFiles/edit_cache.dir
+/home/administrator/my-project/lab4/task2/cmake/stm32cubemx/CMakeFiles/rebuild_cache.dir
