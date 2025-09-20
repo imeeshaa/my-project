@@ -48,6 +48,9 @@ TIM_HandleTypeDef htim2;
 
 PCD_HandleTypeDef hpcd_USB_FS;
 
+//TIM_HandleTypeDef htim3;
+
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -107,7 +110,8 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  HAL_TIM_Base_Start(&htim2);
+  //HAL_TIM_Base_Start(&htim2);
+  HAL_TIM_IC_Start_IT (&htim2, TIM_CHANNEL_1);
   while (1)
   {
     /* USER CODE END WHILE */
@@ -386,17 +390,59 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
-uint32_t countA=0;
-int countB=0;
-int countC=0;
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  if (htim->Instance == TIM2){
-    if (countA==500){
-    HAL_GPIO_WritePin(GPIOE, LD7_Pin,GPIO_PIN_SET);
-    countA=0;}
-    countA++;
-  }
+// uint32_t countA=0;
+// uint32_t countB=0;
+// uint32_t countC=0;
 
+volatile uint32_t led1_counter = 0;
+volatile uint32_t led2_counter = 0;
+volatile uint32_t led3_counter = 0;
+volatile int led1_state = 0; // 0 for off, 1 for on
+volatile int led2_state = 0;
+volatile int led3_state = 0;
+
+const uint32_t LED1_THRESHOLD = 100;  // Example: ~1 Hz for 100ms timer period
+const uint32_t LED2_THRESHOLD = 200;  // Example: ~0.4 Hz
+const uint32_t LED3_THRESHOLD = 500;  // Example: ~0.2 Hz
+
+// void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+//   if (htim->Instance == TIM2){
+//     if (countA==500){
+//     HAL_GPIO_WritePin(GPIOE, LD7_Pin,GPIO_PIN_SET);
+//     countA=0;}
+//     countA++;
+//   }
+
+// }
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    // Make sure it's your timer
+    if (htim->Instance == TIM2) { // Replace Your_TIM_X with your timer instance (e.g., TIM2)
+
+        // LED 1 logic
+        led1_counter++;
+        if (led1_counter >= LED1_THRESHOLD) {
+            led1_state = !led1_state; // Toggle state
+            HAL_GPIO_TogglePin(GPIOE, LD10_Pin); // Replace with your LED GPIO and pin
+            led1_counter = 0; // Reset counter
+        }
+
+        // LED 2 logic
+        led2_counter++;
+        if (led2_counter >= LED2_THRESHOLD) {
+            led2_state = !led2_state;
+            HAL_GPIO_TogglePin(GPIOE, LD9_Pin); // Replace with your LED GPIO and pin
+            led2_counter = 0;
+        }
+
+        // LED 3 logic
+        led3_counter++;
+        if (led3_counter >= LED3_THRESHOLD) {
+            led3_state = !led3_state;
+            HAL_GPIO_TogglePin(GPIOE, LD8_Pin); // Replace with your LED GPIO and pin
+            led3_counter = 0;
+        }
+    }
 }
 
 
