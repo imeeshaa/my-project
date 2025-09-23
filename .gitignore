@@ -9,4 +9,7 @@
 # Ignore logs and editor backup files
 *.log
 *.swp
-
+*.obj
+*.map
+*.elf
+*.ninja*
