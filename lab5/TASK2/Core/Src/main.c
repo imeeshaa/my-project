@@ -18,14 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 
-
 #include "main.h"
 
-#define IN1_PIN GPIO_PIN_0
-#define PIN_PORT     GPIOA
 
-#define IN2_PIN GPIO_PIN_1
-#define PIN_PORT     GPIOA
 
 
 
@@ -82,6 +77,29 @@ static void MX_USB_PCD_Init(void);
   * @brief  The application entry point.
   * @retval int
   */
+
+void speed(uint16_t s){
+    if (s>999){
+      s=999;
+      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 999);
+    }
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, s);
+  }
+
+  void set_direction(uint8_t a){
+    if(a==0){
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+    }
+    else{
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
+    }
+
+  }
+
+
+
 int main(void)
 {
 
@@ -117,14 +135,29 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  speed(500);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
+
   while (1)
   {
-    /* USER CODE END WHILE */
+    set_direction(0);
+    speed(500);
+    HAL_Delay(1000);
 
-    /* USER CODE BEGIN 3 */
+    speed(0);
+    HAL_Delay(100);
+
+    set_direction(1);
+    speed(500);
+    HAL_Delay(1000); 
   }
-  /* USER CODE END 3 */
+HAL_TIM_PWM_Stop (&htim3, TIM_CHANNEL_1 );
 }
+    
+    /* USER CODE END 3 */
+  
 
 /**
   * @brief System Clock Configuration
@@ -281,7 +314,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 47;
+  htim3.Init.Prescaler = 0;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
