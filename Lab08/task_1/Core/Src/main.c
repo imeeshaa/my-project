@@ -95,7 +95,7 @@ void myprintf(const char *fmt, ...){
 
 uint8_t gyro (){
 uint8_t tx_buffer = 0x80 | 0x0F; 
-uint8_t rx_buffer;
+uint8_t rx_buffer = 0;
   HAL_GPIO_WritePin (GPIOE , GPIO_PIN_3 , GPIO_PIN_RESET );
   HAL_SPI_Transmit(&hspi1,&tx_buffer,1,100);
   HAL_SPI_Receive(&hspi1,&rx_buffer,1,100);
@@ -274,7 +274,7 @@ static void MX_SPI1_Init(void)
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
