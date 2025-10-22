@@ -18,11 +18,17 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stdarg.h"
-#include "stdio.h"
-#include "string.h"
 #include "arm_math.h"
-#define FILTER_LEN 10
+#include <stdio.h>
+#include <string.h>
+#include <stdarg.h>
+
+#define FILTER_LEN      10       // moving average length
+#define RAW_FIFO_SIZE   256      // circular FIFO for ISR -> main
+#define TX_BUF_LEN      64
+
+// 1 = Polling mode, 0 = Interrupt mode
+#define USE_POLLING     1
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -54,6 +60,7 @@ SPI_HandleTypeDef hspi1;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart4;
+UART_HandleTypeDef huart1;
 
 PCD_HandleTypeDef hpcd_USB_FS;
 
@@ -70,6 +77,7 @@ static void MX_SPI1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USB_PCD_Init(void);
 static void MX_UART4_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -85,38 +93,117 @@ static void MX_UART4_Init(void);
   */
 
 
-  void myprintf(const char *fmt, ...){
-  char buffer[135];   // buffer to store string
-  va_list args;       //variable list of arguments
-  va_start(args,fmt); //variable list of arguments with format
-  vsnprintf(buffer, sizeof(buffer),fmt, args); //ensures buffer is not overloaded
-  va_end(args);  //cleans up the argument list
+  /* circular FIFO for raw ADC counts (written in ISR, read in main) */
+volatile uint16_t raw_fifo[RAW_FIFO_SIZE];
+volatile uint16_t raw_fifo_head = 0;
+volatile uint16_t raw_fifo_tail = 0;
 
-  
+/* moving window buffer for filter */
+float32_t movbuf[FILTER_LEN];
+uint32_t mov_count = 0; // number of valid samples currently in movbuf (<= FILTER_LEN)
 
-  printf("%s",buffer); //prints the buffer
-  HAL_UART_Transmit(&huart4, (uint32_t*)buffer, strlen(buffer), HAL_MAX_DELAY); // transmits the string to uart
+/* temporary buffer for arm_mean */
+float32_t tempbuf[FILTER_LEN];
+float32_t filtered_val = 0.0f;
+
+/* helper transmit buffer */
+char tx_buf[TX_BUF_LEN];
+
+/* Forward declarations for helpers */
+static inline int raw_fifo_push(uint16_t v);
+static inline int raw_fifo_pop(uint16_t *v);
+void process_sample_from_fifo(void);
+
+/* safe UART transmit helper (non-blocking IT). Make sure HAL_UART_Transmit_IT exists. */
+static inline HAL_StatusTypeDef uart_send_string_it(const char *s);
+
+/* Simple non-blocking print helper using HAL UART IT - avoids printf in ISR */
+void myuart_printf(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    int len = vsnprintf(tx_buf, sizeof(tx_buf), fmt, args);
+    va_end(args);
+    if (len > 0) {
+        if (len >= (int)sizeof(tx_buf)) len = sizeof(tx_buf)-1;
+        // transmit via interrupt (non-blocking). If busy, drop the frame.
+        if (huart4.gState == HAL_UART_STATE_READY) {
+            HAL_UART_Transmit_IT(&huart4, (uint8_t*)tx_buf, (uint16_t)len);
+        }
+    }
 }
 
-float32_t inputBuffer [FILTER_LEN];
-float32_t output;
-void apply_moving_average ( float32_t new_sample ) {
-
-static uint8_t i = 0; 
-inputBuffer[i]=new_sample;
-i++;
-
-arm_mean_f32 (inputBuffer,FILTER_LEN, &output);
-myprintf("%f\r\n", &output);
-
+/* --- FIFO helpers (simple, not thread-safe except for single writer ISR / single reader main) --- */
+static inline int raw_fifo_push(uint16_t v)
+{
+    uint16_t next = (raw_fifo_head + 1) % RAW_FIFO_SIZE;
+    if (next == raw_fifo_tail) {
+        // full, drop oldest (or drop new). Here we drop new sample to keep oldest.
+        return -1;
+    }
+    raw_fifo[raw_fifo_head] = v;
+    raw_fifo_head = next;
+    return 0;
 }
 
+static inline int raw_fifo_pop(uint16_t *v)
+{
+    if (raw_fifo_head == raw_fifo_tail) return -1; // empty
+    *v = raw_fifo[raw_fifo_tail];
+    raw_fifo_tail = (raw_fifo_tail + 1) % RAW_FIFO_SIZE;
+    return 0;
+}
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
-  if(hadc->Instance == ADC1) {
-    float32_t value = HAL_ADC_GetValue(hadc);
-    apply_moving_average(value);
-  }}
+/* --- ADC callback when using interrupt mode --- */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    if (hadc->Instance == ADC1) {
+        uint16_t raw = (uint16_t) HAL_ADC_GetValue(hadc); // read ADC (12-bit -> 0..4095)
+        // push to FIFO for main to pick up. Keep ISR short.
+        raw_fifo_push(raw);
+        // Optionally toggle debug pin here for oscilloscope measurement:
+        // HAL_GPIO_TogglePin(GPIOx, GPIO_PIN_y);
+    }
+}
+
+/* If you want to measure UART timing with IT, you may add TxCpltCallback but not required. */
+
+/* Process one sample from FIFO: update moving buffer, compute mean via CMSIS, and send CSV */
+void process_sample_from_fifo(void)
+{
+    uint16_t raw_counts;
+    if (raw_fifo_pop(&raw_counts) != 0) return; // nothing to do
+
+    // Convert raw to float (we will operate on counts to match plot.py which expects ints)
+    float32_t sample = (float32_t) raw_counts;
+
+    // Update moving buffer: shift right then place newest at index 0 (simple small-buffer approach)
+    if (mov_count < FILTER_LEN) {
+        // still filling
+        movbuf[mov_count++] = sample;
+    } else {
+        // shift left by one and append at end (keeps contiguous order for CMSIS)
+        // Because FILTER_LEN is only 10 this is cheap
+        for (uint32_t i = 0; i < FILTER_LEN - 1; ++i) {
+            movbuf[i] = movbuf[i+1];
+        }
+        movbuf[FILTER_LEN - 1] = sample;
+    }
+
+    // Prepare tempbuf contiguous (movbuf already contiguous) and call arm_mean_f32
+    uint32_t blockSize = mov_count; // initially less than FILTER_LEN
+    // movbuf currently holds samples in order oldest..newest if using the above shifting
+    // so we can call arm_mean_f32 directly on movbuf
+    arm_mean_f32(movbuf, blockSize, &filtered_val);
+
+    // Format and send as CSV: raw,filtered\n
+    // Convert filtered to integer for plot.py (it expects ints)
+    int filtered_int = (int) (filtered_val + 0.5f);
+    int raw_int = (int) raw_counts;
+    // Ensure small string length
+    myuart_printf("%d,%d\r\n", raw_int, filtered_int);
+}
+
 
 int main(void)
 {
@@ -128,46 +215,38 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+    HAL_Init();
+    SystemClock_Config();
 
-  /* USER CODE BEGIN Init */
+    MX_GPIO_Init();
+    MX_ADC1_Init();
+    MX_UART4_Init();
+    MX_I2C1_Init();
+    MX_SPI1_Init();
+    MX_USB_PCD_Init();
 
-  /* USER CODE END Init */
+    // Configure ADC for continuous conversions, no external trigger
+    // Ensure in MX_ADC2_Init:
+    // hadc2.Init.ContinuousConvMode = ENABLE;
+    // hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
 
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_ADC1_Init();
-  MX_I2C1_Init();
-  MX_SPI1_Init();
-  MX_TIM3_Init();
-  MX_USB_PCD_Init();
-  MX_UART4_Init();
-  /* USER CODE BEGIN 2 */
-  
-  
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-   HAL_ADC_Init(&hadc1); //initialize ADC peripherals
-  HAL_ADC_Start_IT(&hadc1); //interrupt mode enabled
-
-  
-
-  while (1)
-  {
-    
-   HAL_Delay(1000);
-  /* USER CODE END 3 */
-}
-
+#if USE_POLLING
+    HAL_ADC_Start(&hadc1);
+    while (1) {
+        if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
+            uint16_t raw = (uint16_t)HAL_ADC_GetValue(&hadc1);
+            raw_fifo_push(raw);
+        }
+        process_sample_from_fifo();
+        HAL_Delay(1);
+    }
+#else
+    HAL_ADC_Start_IT(&hadc1);
+    while (1) {
+        process_sample_from_fifo();
+        HAL_Delay(1);
+    }
+#endif
   /* USER CODE END 3 */
 }
 
@@ -210,8 +289,10 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_UART4
-                              |RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_ADC12;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART1
+                              |RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_I2C1
+                              |RCC_PERIPHCLK_ADC12;
+  PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
   PeriphClkInit.Uart4ClockSelection = RCC_UART4CLKSOURCE_PCLK1;
   PeriphClkInit.Adc12ClockSelection = RCC_ADC12PLLCLK_DIV1;
   PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
@@ -453,6 +534,41 @@ static void MX_UART4_Init(void)
   /* USER CODE BEGIN UART4_Init 2 */
 
   /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
 
 }
 
