@@ -82,48 +82,56 @@ static void MX_USB_PCD_Init(void);
   * @retval int
   */
 
-uint16_t prev_stamp;
-uint16_t curr_stamp; 
+uint32_t prev_stamp;
+uint32_t curr_stamp; 
 bool flag = false;
-uint16_t periods[8];
-uint16_t p = 0;
-uint16_t count = 0;
+uint32_t periods[8];
+uint64_t p = 0;
+uint32_t count = 0;
 bool edge = false;
-int yoyo = 0;
+
 
 void myprintf(const char *fmt, ...)
 {
-    char buffer[135];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-    strcat(buffer, "\r\n");  // new line for terminal readability
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+  char buffer[135];   // buffer to store string
+  va_list args;       //variable list of arguments
+  va_start(args,fmt); //variable list of arguments with format
+  vsnprintf(buffer, sizeof(buffer),fmt, args); //ensures buffer is not overloaded
+  va_end(args);  //cleans up the argument list
+
+  
+
+  
+  HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
 }
 
 
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_PIN){ 
-if (flag) return;
-if(GPIO_PIN == GPIO_PIN_0){
-  yoyo++;
-curr_stamp = __HAL_TIM_GET_COUNTER(&htim2); 
- if (!edge)
-{ prev_stamp = curr_stamp;
- edge = true;
-return;} 
+  if (flag) return;
+    if(GPIO_PIN == GPIO_PIN_0){
+      curr_stamp = __HAL_TIM_GET_COUNTER(&htim2); 
+      if (!edge){
+        prev_stamp = curr_stamp;
+        edge = true;
+        return;} 
 
-if(!flag && edge && count < 8)
-{ uint16_t diff;
-if (curr_stamp >= prev_stamp)
-    diff = curr_stamp - prev_stamp;
-else
-    diff = (0xFFFFFF - prev_stamp) + curr_stamp + 1;  // handle overflow
-periods[count] = diff;
-++count; }
+      if(!flag && edge && count < 8){
+        uint32_t diff;
+        if (curr_stamp >= prev_stamp)
+            diff = curr_stamp - prev_stamp;
+        else
+            diff = (0xFFFFFF - prev_stamp) + curr_stamp + 1;  // handle overflow
 
-if (count == 8){ flag=true; } }}
+        periods[count] = diff;
+        ++count; 
+        prev_stamp = curr_stamp;}
+
+      if (count == 8){ 
+        flag=true; 
+      } 
+    }
+  }
 int main(void)
 {
 
@@ -173,10 +181,17 @@ int main(void)
     flag = false;
     float average = 0;
 
-  average = (float)p / 8.0;
-  float frequency = 8000000.0f / (2.0f * average);
+    average = (float)p / 8.0;
+    float frequency = 4800000.0f / (average);
     p = 0;
-    myprintf("frequency: %d", frequency);
+    //myprintf("frequency: %.2f\r\n", frequency);
+
+    myprintf("frequency: %d.%02d\r\n",
+         (int)frequency,
+         (int)((frequency - (int)frequency) * 100));
+
+
+
     HAL_Delay(100);}
 }
   /* USER CODE END 3 */
