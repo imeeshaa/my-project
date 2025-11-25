@@ -74,8 +74,8 @@ static uint8_t txb[8], rxb[8];
 int xi, yi, zi, temp_c;
 bool flag = false;
 
-
-float gx, gy, gz;
+float gx, gy,gz;
+float x_dps, y_dps, z_dps;
 float offx = 0, offy = 0, offz = 0;
 
 /* USER CODE END PM */
@@ -304,10 +304,9 @@ int main(void)
     /* USER CODE END WHILE */
     if(flag){
       flag=0;
-      char line[96];
     
-     print_lsm("%f, %f, %f, %d, %d, %d, %d\r\n",
-                      gx, gy, gz,temp_c, xi, yi, zi);
+     print_lsm(" x=%f, yi=%f, zi=%f\r\n",
+                     x_dps, y_dps, z_dps);
 
     HAL_Delay(10);
       
@@ -704,13 +703,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     int16_t y_raw = (int16_t)((raw[3] << 8) | raw[2]);
     int16_t z_raw = (int16_t)((raw[5] << 8) | raw[4]);
 
-    float x_dps = x_raw * GYRO_SENS_245DPS;
-    float y_dps = y_raw * GYRO_SENS_245DPS;
-    float z_dps = z_raw * GYRO_SENS_245DPS;
+    x_dps = x_raw * GYRO_SENS_245DPS;
+    y_dps = y_raw * GYRO_SENS_245DPS;
+    z_dps = z_raw * GYRO_SENS_245DPS;
 
-    xi = (int)(x_dps * 100.0f);
-    yi = (int)(y_dps * 100.0f);
-    zi = (int)(z_dps * 100.0f);
+    
 
     LSM_Accel_Read();
     counter = 0;}
