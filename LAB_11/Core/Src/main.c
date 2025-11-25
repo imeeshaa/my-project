@@ -305,8 +305,8 @@ int main(void)
     if(flag){
       flag=0;
     
-     print_lsm(" x=%f, yi=%f, zi=%f\r\n",
-                     x_dps, y_dps, z_dps);
+     //print_lsm(" x=%f, yi=%f, zi=%f\r\n",x_dps, y_dps, z_dps);
+     print_lsm("x = %f, y = %f, z = %f\r\n", gx, gy,gz);
 
     HAL_Delay(10);
       
