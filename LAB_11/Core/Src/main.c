@@ -41,7 +41,10 @@
 #define LSM_AUTO_INC 0x80 
 #define LSM_G_PER_LSB 0.0039f // 3.9 mg per LSB #define PRINT_RATE_DIV 10 // 
 #define PRINT_RATE_DIV 10
+#define LOOP_DT 0.01f   // TIM2 ISR = 100 Hz
 
+/* Deadzone for small PID output */
+#define MOTOR_DEADZONE 20
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -279,25 +282,46 @@ float pid_controller (PID *pid, float dt, float PV){ //process variable
     return pid->CoT;
 }
 
-void speed(uint16_t s){
-    if (s>999){
-      s=999;
-      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 999);
-    }
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, s);
-  }
+// void speed(uint16_t s){
+//     if (s>999){
+//       s=999;
+//       __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 999);
+//     }
+//     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, s);
+//   }
 
-void set_direction(uint8_t a){
-    if(a==0){
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
-    }
-    else{
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
-    }
+// void set_direction(uint8_t a){
+//     if(a==0){
+//       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
+//       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+//     }
+//     else{
+//       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+//       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
+//     }
 
-  }
+//   }
+
+
+// void speed2(uint16_t s){
+//     if (s > 999) s = 999;
+//     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, s);
+// }
+
+// void set_direction2(uint8_t a){
+//     if(a==0){
+//         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
+//         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+//     } else {
+//         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+//         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+//     }
+// }
+
+void speed_motor(TIM_HandleTypeDef *htim, uint32_t channel, uint16_t s) {
+    if (s > 999) s = 999;
+    __HAL_TIM_SET_COMPARE(htim, channel, s);
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -331,8 +355,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     LSM_Accel_Read();
 
     /* --- Manage print rate (do not print from ISR) --- */
-
-    angle = 0.98*(angle + gyro_x_dps*0.01) + 0.02*accel_y_g;
+/* --- Complementary filter for pitch angle --- */
+        float accel_angle = atan2f(accel_x_g, accel_z_g) * 57.2958f; // rad -> deg
+        angle = 0.98f * (angle + gyro_y_dps * LOOP_DT) + 0.02f * accel_angle;
+    //angle = 0.98*(angle + gyro_x_dps*0.01) + 0.02*accel_y_g;
     display_counter++;
     if (display_counter >= PRINT_RATE_DIV) {
         display_counter = 0;
@@ -401,23 +427,70 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1); 
-  speed(500); 
+    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2); 
+
+  // speed(0); 
+  // set_direction(0);
+
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET); 
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); 
-  PID pid = { .set_point = 0.0f, //should be zero 
-  .kp= 12.0f, .ki = 0.01f, .kd =0.1f, .CoT =0.1f, .prev_e_t = 0.0f, .integral = 0.0f }; 
+
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); 
+HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+  PID pid = { 
+    .set_point = 0.0f, //should be zero 
+    .kp= 25.0f, 
+    .ki = 0.5f, 
+    .kd = 2.0f, 
+    .CoT =0.0f, 
+    .prev_e_t = 0.0f, 
+    .integral = 0.0f }; 
   /* Infinite loop: do printing and any background tasks here */ 
  while (1) { 
   if (print_flag) 
   { 
-  //print_lsm("%f\r\n", angle); 
-   float dt = 0.005; 
-   float pid_out = pid_controller(&pid, dt, angle); 
+  print_lsm("%f\r\n", angle); 
+   //float dt = 0.01; 
+   float pid_out = pid_controller(&pid, LOOP_DT, angle); 
 
-   if(pid_out > 0) set_direction(0); else set_direction(1);
-    speed((uint16_t)fabs(pid_out)); 
+  //  if(pid_out > 0) set_direction(0); else set_direction(1);
+  //   speed((uint16_t)fabs(pid_out)); 
      /* other non-time-critical background tasks can go here */ 
-    HAL_Delay(5); // keep main loop light; this delay doesn't affect ISR timing 
+    //HAL_Delay(5); // keep main loop light; this delay doesn't affect ISR timing 
+uint16_t output = (uint16_t)fminf(fabs(pid_out), 999.0f);
+
+if (fabs(pid_out) < MOTOR_DEADZONE)
+{
+    speed_motor(&htim3, TIM_CHANNEL_1, 0);
+    speed_motor(&htim3, TIM_CHANNEL_2, 0);
+}
+else
+{
+    // Set direction pins for both motors
+    if(pid_out > 0)
+    {
+        // Forward
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // Motor 1
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);   // Motor 2
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+    }
+    else
+    {
+        // Backward
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); // Motor 1
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); // Motor 2
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+    }
+
+    // Set PWM for both motors
+    uint16_t pwm_val = (uint16_t)fminf(fabs(pid_out), 999.0f);
+    speed_motor(&htim3, TIM_CHANNEL_1, pwm_val);
+    speed_motor(&htim3, TIM_CHANNEL_2, pwm_val);
+}
     print_flag = false; 
     } }}
 
