@@ -400,26 +400,26 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
- HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1); 
- speed(500); 
- HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET); 
- HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); 
- PID pid = { .set_point = 0.0f, //should be zero 
- .kp= 0.0f, .ki = 0.0f, .kd =0.0f, .CoT =0.0f, .prev_e_t = 0.0f, .integral = 0.0f }; 
- /* Infinite loop: do printing and any background tasks here */ 
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1); 
+  speed(500); 
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET); 
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); 
+  PID pid = { .set_point = 0.0f, //should be zero 
+  .kp= 12.0f, .ki = 0.01f, .kd =0.1f, .CoT =0.1f, .prev_e_t = 0.0f, .integral = 0.0f }; 
+  /* Infinite loop: do printing and any background tasks here */ 
  while (1) { 
   if (print_flag) 
   { 
-    print_lsm("%f\r\n", angle); 
+  //print_lsm("%f\r\n", angle); 
    float dt = 0.005; 
    float pid_out = pid_controller(&pid, dt, angle); 
 
    if(pid_out > 0) set_direction(0); else set_direction(1);
     speed((uint16_t)fabs(pid_out)); 
-    HAL_TIM_PWM_Stop (&htim3, TIM_CHANNEL_1 ); } /* other non-time-critical background tasks can go here */ 
+     /* other non-time-critical background tasks can go here */ 
     HAL_Delay(5); // keep main loop light; this delay doesn't affect ISR timing 
     print_flag = false; 
-    } }
+    } }}
 
 /**
   * @brief System Clock Configuration
