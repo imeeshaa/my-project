@@ -8,9 +8,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
+#include <stdint.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -48,8 +46,22 @@ PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
 
-float gx, gy, gz;
-float offx = 0, offy = 0, offz = 0;
+typedef struct {
+    
+    //raw
+    int16_t ax, ay, az;
+    int16_t gx, gy, gz;
+    
+    //scaled
+    float ax1,ay1,az1;
+    float gx1,gy1,gz1;
+    
+    //offsets
+    float axo, ayo, azo;
+    float gxo, gyo, gzo;
+    
+} values;
+
 
 /* USER CODE END PV */
 
@@ -61,13 +73,6 @@ static void MX_SPI1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USB_PCD_Init(void);
 /* USER CODE BEGIN PFP */
-
-void print_lsm(const char *fmt, ...);
-HAL_StatusTypeDef i2c_write8(uint8_t dev, uint8_t reg, uint8_t data);
-HAL_StatusTypeDef i2c_readn(uint8_t dev, uint8_t reg, uint8_t *buf, uint16_t n);
-void LSM_Accel_Init(void);
-void LSM_Accel_Calibrate(int samples);
-void LSM_Accel_Read(void);
 
 /* USER CODE END PFP */
 
@@ -85,66 +90,90 @@ void print_lsm(const char *fmt, ...)
     HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
 }
 
-HAL_StatusTypeDef i2c_write8(uint8_t dev, uint8_t reg, uint8_t data)
-{
-    return HAL_I2C_Mem_Write(&hi2c1, dev, reg,
-                             I2C_MEMADD_SIZE_8BIT, &data, 1, 100);
+HAL_StatusTypeDef LSM_Accel_Init(void)
+{   
+    uint8_t data = 0x57;
+    if (HAL_I2C_Mem_Write(&hi2c1, 0x32, 0x20, I2C_MEMADD_SIZE_8BIT, &data, 1, 100) != HAL_OK)
+        return HAL_ERROR;
+    
+    uint8_t bata = 0x00;
+    if (HAL_I2C_Mem_Write(&hi2c1, 0x32, 0x23, I2C_MEMADD_SIZE_8BIT, &bata, 1, 100) != HAL_OK)
+        return HAL_ERROR;
+
+    return HAL_OK;
 }
 
-HAL_StatusTypeDef i2c_readn(uint8_t dev, uint8_t reg, uint8_t *buf, uint16_t n)
-{
-    return HAL_I2C_Mem_Read(&hi2c1, dev, reg,
-                            I2C_MEMADD_SIZE_8BIT, buf, n, 100);
-}
 
-void LSM_Accel_Init(void)
+HAL_StatusTypeDef LSM_Accel_Read(values* s)
 {
-    i2c_write8(LSM_A_ADDR_8, LSM_CTRL1_A, 0x57); // 100Hz, XYZ enable
-    HAL_Delay(5);
-    i2c_write8(LSM_A_ADDR_8, LSM_CTRL4_A, 0x00); // ±2g
-    HAL_Delay(5);
-}
-
-void LSM_Accel_Calibrate(int samples)
-{
-    float sx = 0, sy = 0, sz = 0;
     uint8_t d[6];
 
-    for (int i = 0; i < samples; i++)
-    {
-        i2c_readn(LSM_A_ADDR_8, (LSM_OUT_X_L | LSM_AUTO_INC), d, 6);
+    if (HAL_I2C_Mem_Read(&hi2c1, 0x33, (LSM_OUT_X_L | LSM_AUTO_INC), I2C_MEMADD_SIZE_8BIT, d, 6, 100) != HAL_OK)
+        return HAL_ERROR;
+    
+    //raw values
+    s->ax = (int16_t)((d[1] << 8) | d[0]);
+    s->ay = (int16_t)((d[3] << 8) | d[2]);
+    s->az = (int16_t)((d[5] << 8) | d[4]);
 
-        int16_t rx = (d[1] << 8) | d[0];
-        int16_t ry = (d[3] << 8) | d[2];
-        int16_t rz = (d[5] << 8) | d[4];
 
-        sx += rx * LSM_G_PER_LSB;
-        sy += ry * LSM_G_PER_LSB;
-        sz += rz * LSM_G_PER_LSB;
+    int16_t tx = s->ax >> 4;
+    int16_t ty = s->ay >> 4;
+    int16_t tz = s->az >> 4;
 
-        HAL_Delay(10);
+
+    float acc_g_x = tx * LSM_G_PER_LSB;
+    float acc_g_y = ty * LSM_G_PER_LSB;
+    float acc_g_z = tz * LSM_G_PER_LSB;
+
+    // scaled values (m/s^2) with calibration applied
+    // NOTE: This assumes accel_calibrate is modified to store offsets in 'g' units.
+    s->ax1 = (acc_g_x - s->axo) * 9.80665f;
+    s->ay1 = (acc_g_y - s->ayo) * 9.80665f;
+    s->az1 = (acc_g_z - s->azo) * 9.80665f;;
+    
+    return HAL_OK; 
+}
+
+
+void accel_calibrate (values *s){
+    
+    float a1 = 0.0, a2 = 0.0, a3 = 0.0;
+    
+    s->axo = s->ayo = s->azo = 0.0;
+    s->gxo = s->gyo = s->gzo = 0.0;
+    
+    for (int i = 0; i<20; i++){ //20 samples
+        uint8_t d[6];
+        
+        // 1. Perform a direct I2C read inside calibration for g-based averaging
+        if (HAL_I2C_Mem_Read(&hi2c1, 0x33, (LSM_OUT_X_L | LSM_AUTO_INC), I2C_MEMADD_SIZE_8BIT, d, 6, 100) != HAL_OK)
+             return; 
+        // 2. Compute the g-values based on LSM303AGR 12-bit scale
+        int16_t raw_ax = (int16_t)((d[1] << 8) | d[0]);
+        int16_t raw_ay = (int16_t)((d[3] << 8) | d[2]);
+        int16_t raw_az = (int16_t)((d[5] << 8) | d[4]);
+        
+        int16_t tx = raw_ax >> 4; 
+        int16_t ty = raw_ay >> 4;
+        int16_t tz = raw_az >> 4;
+
+        a1 += tx * LSM_G_PER_LSB; // Sum of Ax in g
+        a2 += ty * LSM_G_PER_LSB; // Sum of Ay in g
+        a3 += tz * LSM_G_PER_LSB; // Sum of Az in g
+
+        HAL_Delay(10); 
     }
-
-    offx = sx / samples;
-    offy = sy / samples;
-    offz = sz / samples;  // Keep 1g on Z
+    
+    // Calculate the average offsets (in g)
+    s->axo = a1/20;
+    s->ayo = a2/20;
+    // Az should read 1g when flat, so subtract 1.0f from the average to find the offset
+    s->azo = (a3/20) - 1.0f; 
 }
 
-void LSM_Accel_Read(void)
-{
-    uint8_t d[6];
 
-    if (i2c_readn(LSM_A_ADDR_8, (LSM_OUT_X_L | LSM_AUTO_INC), d, 6) != HAL_OK)
-        return;
 
-    int16_t rx = (d[1] << 8) | d[0];
-    int16_t ry = (d[3] << 8) | d[2];
-    int16_t rz = (d[5] << 8) | d[4];
-
-    gx = rx * LSM_G_PER_LSB - offx;
-    gy = ry * LSM_G_PER_LSB - offy;
-    gz = rz * LSM_G_PER_LSB - offz;
-}
 
 /* USER CODE END 0 */
 
@@ -172,32 +201,23 @@ int main(void)
 
   /* Keep CS HIGH for I2C mode */
   HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_SET);
-
-  print_lsm("\r\n--- Lab 9 Task 2 (Accelerometer) ---\r\n");
-
-  /* Check accelerometer presence */
-  if (HAL_I2C_IsDeviceReady(&hi2c1, LSM_A_ADDR_8, 3, 100) == HAL_OK)
-      print_lsm("Accelerometer detected.\r\n");
-  else
-      print_lsm("ERROR: Accelerometer NOT detected!\r\n");
-
+  values s;
   LSM_Accel_Init();
   HAL_Delay(50);
 
-  print_lsm("Calibrating...\r\n");
-  LSM_Accel_Calibrate(40);
-  print_lsm("Calibration complete!\r\n");
+  accel_calibrate (&s);
+  
 
   /* USER CODE END 2 */
 
   while (1)
   {
     /* USER CODE BEGIN WHILE */
-
-    LSM_Accel_Read();
+    LSM_Accel_Read(&s);
 
     /* Print clean CSV for Python plot script */
-    print_lsm("%f, %f, %f\r\n", gx, gy, gz);
+    //print_lsm("%d  , %d  , %d\r\n", s.ax, s.ay,s.az);
+    print_lsm("%f, %f, %f\r\n", s.ax1, s.ay1,s.az1);
 
     HAL_Delay(100);
 
