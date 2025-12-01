@@ -16,32 +16,50 @@
 #include "main.h" 
 #include "stdarg.h" 
 #include "stdio.h" 
+#include "stm32f3xx_hal.h"
 #include "string.h" 
 #include "stdbool.h" 
 #include "math.h"
 
-#define GYRO_CS_PORT GPIOE 
-#define GYRO_CS_PIN CS_I2C_SPI_Pin 
-#define GYRO_CTRL_REG1 0x20U 
-#define GYRO_OUT_TEMP 0x26U 
-#define GYRO_OUT_X_L 0x28U 
-#define GYRO_OUT_X_H 0x29U 
-#define GYRO_OUT_Y_L 0x2AU 
-#define GYRO_OUT_Y_H 0x2BU 
-#define GYRO_OUT_Z_L 0x2CU 
-#define GYRO_OUT_Z_H 0x2DU 
-#define GYRO_SPI_READ 0x80U 
-#define GYRO_SPI_AUTOINC 0x40U 
-#define GYRO_SENS_245DPS 0.00875f // dps per LSB for 245 dps 
-#define CAL_ROOM_C 25 // accelerometer (I2C - LSM) 
-#define LSM_A_ADDR_8 (0x19 << 1) // Accelerometer 7-bit address shifted for HAL 
-#define LSM_CTRL1_A 0x20 
-#define LSM_CTRL4_A 0x23 
-#define LSM_OUT_X_L 0x28 
-#define LSM_AUTO_INC 0x80 
-#define LSM_G_PER_LSB 0.0039f // 3.9 mg per LSB #define PRINT_RATE_DIV 10 // 
+int16_t ax_raw, ay_raw, az_raw;
+volatile uint8_t new_data_ready = 0;
+
+#define LSM303AGR_ACC_I2C_ADDR_WRITE 0x32
+#define LSM303AGR_ACC_I2C_ADDR_READ 0x33
+
+#define CTRL_REG1_A 0x20
+#define CTRL_REG4_A 0x23
+
+#define OUT_X_L_A 0x28
+
+#define I3G4250D_WHO_AM_I 0x0F
+#define I3G4250D_CTRL_REG1 0x20
+#define I3G4250D_CTRL_REG4 0x23
+#define I3G4250D_OUT_X_L 0x28
+#define SPI_READ 0x80
+#define SPI_AUTO_INC 0x40
+
+float gx_offset = 0, gy_offset = 0, gz_offset = 0;
+float gx, gy, gz;
+float gx_raw=0, gy_raw=0, gz_raw=0; // store raw readings
+
+float pitch = 0.0f, roll = 0.0f;
+float ax_g ;
+float ay_g ;
+float az_g ;
+
+// --- Convert g → m/s² ---
+float ax_ms2 ;
+float ay_ms2 ;
+float az_ms2 ;
+
+float gx_corrected ;
+float gy_corrected ;
+float gz_corrected ;
+
+float DT = 0.010f;
 #define PRINT_RATE_DIV 10
-#define LOOP_DT 0.01f   // TIM2 ISR = 100 Hz
+
 
 /* Deadzone for small PID output */
 #define MOTOR_DEADZONE 20
@@ -82,29 +100,10 @@ PCD_HandleTypeDef hpcd_USB_FS;
 /* USER CODE BEGIN PV */
 
 /* Sensor / calibration state */
-static int8_t  g_t0 = 0;
-static int     g_temp_slope = -1;
-static uint8_t txb[8], rxb[8];
-
-/* Accelerometer (in g) */
-volatile float accel_x_g = 0.0f;
-volatile float accel_y_g = 0.0f;
-volatile float accel_z_g = 0.0f;
-
-/* Accelerometer offsets (g) computed during calibration */
-static float accel_off_x = 0.0f;
-static float accel_off_y = 0.0f;
-static float accel_off_z = 0.0f;
-
-/* Gyroscope (deg/s) */
-volatile float gyro_x_dps = 0.0f;
-volatile float gyro_y_dps = 0.0f;
-volatile float gyro_z_dps = 0.0f;
 
 
 float angle = 0.0;
 /* Gyro temperature / misc */
-static int temp_c = 0;
 
 /* Display flag (set from ISR to schedule UART printing in main loop) */
 volatile bool print_flag = false;
@@ -136,128 +135,128 @@ void print_lsm(const char *fmt, ...)
     va_start(args, fmt);
     vsnprintf(buffer, sizeof(buffer), fmt, args);
     va_end(args);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, (uint16_t)strlen(buffer), HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
 }
 
-/* --- I2C convenience wrappers --- */
-HAL_StatusTypeDef i2c_write8(uint8_t dev, uint8_t reg, uint8_t data)
+void LSM303AGR_Init(void)
 {
-    return HAL_I2C_Mem_Write(&hi2c1, dev, reg, I2C_MEMADD_SIZE_8BIT, &data, 1, 100);
+uint8_t ctrl1 = 0x67; // ODR=200Hz, all axes enabled
+uint8_t ctrl4 = 0x00; // ±2g, high-resolution disabled
+
+HAL_I2C_Mem_Write(&hi2c1, LSM303AGR_ACC_I2C_ADDR_WRITE,
+CTRL_REG1_A, 1, &ctrl1, 1, HAL_MAX_DELAY);
+
+HAL_I2C_Mem_Write(&hi2c1, LSM303AGR_ACC_I2C_ADDR_WRITE,
+CTRL_REG4_A, 1, &ctrl4, 1, HAL_MAX_DELAY);
 }
 
-HAL_StatusTypeDef i2c_readn(uint8_t dev, uint8_t reg, uint8_t *buf, uint16_t n)
+void LSM303AGR_Read_Accelerometer(int16_t *ax, int16_t *ay, int16_t *az)
 {
-    return HAL_I2C_Mem_Read(&hi2c1, dev, reg, I2C_MEMADD_SIZE_8BIT, buf, n, 100);
+uint8_t buffer[6];
+
+HAL_I2C_Mem_Read(&hi2c1, LSM303AGR_ACC_I2C_ADDR_READ,
+OUT_X_L_A | 0x80, 1, buffer, 6, HAL_MAX_DELAY);
+
+int16_t rawX = (int16_t)((buffer[1] << 8) | buffer[0]);
+int16_t rawY = (int16_t)((buffer[3] << 8) | buffer[2]);
+int16_t rawZ = (int16_t)((buffer[5] << 8) | buffer[4]);
+
+// Convert 16-bit to 10-bit (datasheet requirement)
+*ax = rawX >> 6;
+*ay = rawY >> 6;
+*az = rawZ >> 6;
 }
 
-/* --- Gyro SPI helpers --- */
-static uint8_t gyro_read_u8(uint8_t reg)
+static void Gyro_CS_Low() {
+HAL_GPIO_WritePin(CS_I2C_SPI_GPIO_Port, CS_I2C_SPI_Pin, GPIO_PIN_RESET);
+}
+
+static void Gyro_CS_High() {
+HAL_GPIO_WritePin(CS_I2C_SPI_GPIO_Port, CS_I2C_SPI_Pin, GPIO_PIN_SET);
+}
+void I3G4250D_Write(uint8_t reg, uint8_t value)
 {
-  uint8_t cmd = reg | GYRO_SPI_READ;
-  uint8_t val = 0;
-  HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_RESET);
-  HAL_SPI_Transmit(&hspi1, &cmd, 1, HAL_MAX_DELAY);
-  HAL_SPI_Receive(&hspi1, &val, 1, HAL_MAX_DELAY);
-  HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_SET);
-  return val;
-}
+Gyro_CS_Low();
 
-static void gyro_write_reg(uint8_t reg, uint8_t val)
+uint8_t data[2] = { reg, value };
+HAL_SPI_Transmit(&hspi1, data, 2, HAL_MAX_DELAY);
+
+Gyro_CS_High();
+}
+void I3G4250D_Read(uint8_t reg, uint8_t *buffer, uint8_t len)
 {
-  HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_RESET);
-  txb[0] = reg & 0x7F; // write
-  txb[1] = val;
-  HAL_SPI_Transmit(&hspi1, txb, 2, HAL_MAX_DELAY);
-  HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_SET);
-}
+Gyro_CS_Low();
 
-static void gyro_read_regs(uint8_t start_reg, uint8_t *dst, uint16_t len)
+uint8_t address = reg | SPI_READ | SPI_AUTO_INC;
+HAL_SPI_Transmit(&hspi1, &address, 1, HAL_MAX_DELAY);
+HAL_SPI_Receive(&hspi1, buffer, len, HAL_MAX_DELAY);
+
+Gyro_CS_High();
+}
+void I3G4250D_Init(void)
 {
-  uint8_t cmd = start_reg | GYRO_SPI_READ | (len > 1 ? GYRO_SPI_AUTOINC : 0);
-  HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_RESET);
-  HAL_SPI_Transmit(&hspi1, &cmd, 1, HAL_MAX_DELAY);
-  HAL_SPI_Receive(&hspi1, dst, len, HAL_MAX_DELAY);
-  HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_SET);
+// CTRL_REG1: enable X,Y,Z, set ODR=200 Hz, BW=25Hz
+I3G4250D_Write(I3G4250D_CTRL_REG1, 0x8F);
+// CTRL_REG4: ±245 dps full scale
+I3G4250D_Write(I3G4250D_CTRL_REG4, 0x00);
 }
-
-/* --- Initialise gyro (minimal) --- */
-static void gyro_init(void)
+void I3G4250D_Read_Gyro(float *gx, float *gy, float *gz)
 {
-  // Power on, enable X,Y,Z (same as before)
-  gyro_write_reg(GYRO_CTRL_REG1, 0x0F);
-}
+uint8_t buffer[6];
+I3G4250D_Read(I3G4250D_OUT_X_L, buffer, 6);
 
-/* --- Gyro temperature read & rough calibration of register baseline --- */
-static void gyro_temp_calibrate(void)
+int16_t rawX = (buffer[1] << 8) | buffer[0];
+int16_t rawY = (buffer[3] << 8) | buffer[2];
+int16_t rawZ = (buffer[5] << 8) | buffer[4];
+
+*gx = rawX * 0.00875f;
+*gy = rawY * 0.00875f;
+*gz = rawZ * 0.00875f;
+
+}
+void I3G4250D_Calibrate(void)
 {
-  uint8_t who = gyro_read_u8(0x0F);
-  if (who == 0xD4 || who == 0xD7) g_temp_slope = +1;
-  else                            g_temp_slope = -1;
-
-  int32_t acc = 0;
-  for (int i = 0; i < 32; i++) {
-    acc += (int8_t)gyro_read_u8(GYRO_OUT_TEMP);
-    HAL_Delay(1); // tiny delay during calibration in setup (not in ISR)
-  }
-  g_t0 = (int8_t)(acc / 32);
-}
-
-/* --- Accelerometer init and read --- */
-void LSM_Accel_Init(void)
+int samples = 100;
+float sum_x=0, sum_y=0, sum_z=0;
+for(int i=0; i<samples; i++)
 {
-    // CTRL1: 0x57 -> ODR = 100Hz, all axes enabled (same as your original)
-    i2c_write8(LSM_A_ADDR_8, LSM_CTRL1_A, 0x57);
-    // CTRL4: ±2g
-    i2c_write8(LSM_A_ADDR_8, LSM_CTRL4_A, 0x00);
+float gx, gy, gz;
+I3G4250D_Read_Gyro(&gx, &gy, &gz);
+sum_x += gx;
+sum_y += gy;
+sum_z += gz;
+}
+gx_offset = sum_x / samples;
+gy_offset = sum_y / samples;
+gz_offset = sum_z / samples;
 }
 
-/* Calibrate accelerometer offsets (samples taken at rest) */
-void LSM_Accel_Calibrate(int samples)
+
+void Angleestimate()
 {
-    float sx = 0, sy = 0, sz = 0;
-    uint8_t d[6];
+// Convert raw to g
+ax_g = ax_raw * 0.0039f;
+ay_g = ay_raw * 0.0039f;
+az_g = az_raw * 0.0039f;
 
-    for (int i = 0; i < samples; i++)
-    {
-        if (i2c_readn(LSM_A_ADDR_8, (LSM_OUT_X_L | LSM_AUTO_INC), d, 6) != HAL_OK) {
-            HAL_Delay(2);
-            continue;
-        }
+// Convert to m/s^2
+ax_ms2 = ax_g * 9.80665f;
+ay_ms2 = ay_g * 9.80665f;
+az_ms2 = az_g * 9.80665f;
 
-        int16_t rx = (int16_t)((d[1] << 8) | d[0]);
-        int16_t ry = (int16_t)((d[3] << 8) | d[2]);
-        int16_t rz = (int16_t)((d[5] << 8) | d[4]);
+// Gyro offsets removed
+gx_corrected = gx_raw - gx_offset;
+gy_corrected = gy_raw - gy_offset;
+gz_corrected = gz_raw - gz_offset;
 
-        sx += ((float)rx) * LSM_G_PER_LSB;
-        sy += ((float)ry) * LSM_G_PER_LSB;
-        sz += ((float)rz) * LSM_G_PER_LSB;
+// --- Your chosen axes ---
+float roll_acc = atan2f(-ax_ms2, az_ms2) * 57.2958f;
+float roll_gyro = roll + gy_corrected * DT;
 
-        HAL_Delay(5);
-    }
-
-    accel_off_x = sx / (float)samples;
-    accel_off_y = sy / (float)samples;
-    // subtract 1g from Z because gravity should read ~ +1.0 g on the axis pointing up
-    accel_off_z = (sz / (float)samples) - 1.0f;
+// Complementary filter
+roll = 0.98f * roll_gyro + 0.02f * roll_acc;
 }
 
-/* Read accelerometer and apply offsets -> output in g */
-void LSM_Accel_Read(void)
-{
-    uint8_t d[6];
-
-    if (i2c_readn(LSM_A_ADDR_8, (LSM_OUT_X_L | LSM_AUTO_INC), d, 6) != HAL_OK)
-        return;
-
-    int16_t rx = (int16_t)((d[1] << 8) | d[0]);
-    int16_t ry = (int16_t)((d[3] << 8) | d[2]);
-    int16_t rz = (int16_t)((d[5] << 8) | d[4]);
-
-    /* convert to g and apply stored offsets */
-    accel_x_g = ((float)rx) * LSM_G_PER_LSB - accel_off_x;
-    accel_y_g = ((float)ry) * LSM_G_PER_LSB - accel_off_y;
-    accel_z_g = ((float)rz) * LSM_G_PER_LSB - accel_off_z;
-}
 
 
 
@@ -319,7 +318,7 @@ float pid_controller (PID *pid, float dt, float PV){ //process variable
 // }
 
 void speed_motor(TIM_HandleTypeDef *htim, uint32_t channel, uint16_t s) {
-    if (s > 999) s = 999;
+    if (s > 500) s = 500;
     __HAL_TIM_SET_COMPARE(htim, channel, s);
 }
 /* USER CODE END PFP */
@@ -332,33 +331,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM2)
   {
-    /* --- Read gyro registers (non-blocking SPI calls used synchronously) --- */
-    uint8_t raw_g[6];
-    gyro_read_regs(GYRO_OUT_X_L, raw_g, 6);
+    LSM303AGR_Read_Accelerometer(&ax_raw, &ay_raw, &az_raw);
+    I3G4250D_Read_Gyro(&gx_raw, &gy_raw, &gz_raw);
+    Angleestimate();
 
-    int16_t gx_raw = (int16_t)((raw_g[1] << 8) | raw_g[0]);
-    int16_t gy_raw = (int16_t)((raw_g[3] << 8) | raw_g[2]);
-    int16_t gz_raw = (int16_t)((raw_g[5] << 8) | raw_g[4]);
-
-    /* convert to deg/s */
-    gyro_x_dps = (float)gx_raw * GYRO_SENS_245DPS;
-    gyro_y_dps = (float)gy_raw * GYRO_SENS_245DPS;
-    gyro_z_dps = (float)gz_raw * GYRO_SENS_245DPS;
-
-    /* temperature (for info only) */
-    uint8_t t_raw_u8 = 0;
-    gyro_read_regs(GYRO_OUT_TEMP, &t_raw_u8, 1);
-    int8_t t_raw = (int8_t)t_raw_u8;
-    temp_c = CAL_ROOM_C + g_temp_slope * (t_raw - g_t0);
-
-    /* --- Read accelerometer (I2C) --- */
-    LSM_Accel_Read();
-
-    /* --- Manage print rate (do not print from ISR) --- */
-/* --- Complementary filter for pitch angle --- */
-        float accel_angle = atan2f(accel_x_g, accel_z_g) * 57.2958f; // rad -> deg
-        angle = 0.98f * (angle + gyro_y_dps * LOOP_DT) + 0.02f * accel_angle;
-    //angle = 0.98*(angle + gyro_x_dps*0.01) + 0.02*accel_y_g;
     display_counter++;
     if (display_counter >= PRINT_RATE_DIV) {
         display_counter = 0;
@@ -373,7 +349,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   * @brief  The application entry point.
   * @retval int
   */
-int main(void)
+
+  int main(void)
 {
 
   /* USER CODE BEGIN 1 */
@@ -407,18 +384,11 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   /* Ensure gyro CS high before init */
-  HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_SET);
 
   /* Init sensors */
-  gyro_init();
-  gyro_temp_calibrate();
-
-  LSM_Accel_Init();
-  /* small delay to let sensor stabilise on startup */
-  
-  /* calibrate accel offsets (put board flat and still) */
-  LSM_Accel_Calibrate(40);
-
+  LSM303AGR_Init();
+  I3G4250D_Init();
+  I3G4250D_Calibrate();
   /* Start TIM2 interrupt (main sensor loop) */
   HAL_TIM_Base_Start_IT(&htim2);
 
@@ -436,28 +406,27 @@ int main(void)
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); 
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); 
-HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
   PID pid = { 
     .set_point = 0.0f, //should be zero 
-    .kp= 25.0f, 
-    .ki = 0.5f, 
-    .kd = 2.0f, 
+    .kp= 29.0f, 
+    .ki = 12.1f, 
+    .kd = 17.4f, 
     .CoT =0.0f, 
     .prev_e_t = 0.0f, 
     .integral = 0.0f }; 
   /* Infinite loop: do printing and any background tasks here */ 
  while (1) { 
-  if (print_flag) 
-  { 
-  print_lsm("%f\r\n", angle); 
+  
+  print_lsm("%f\r\n", roll); 
    //float dt = 0.01; 
-   float pid_out = pid_controller(&pid, LOOP_DT, angle); 
+   float pid_out = pid_controller(&pid, DT, roll); 
 
   //  if(pid_out > 0) set_direction(0); else set_direction(1);
   //   speed((uint16_t)fabs(pid_out)); 
      /* other non-time-critical background tasks can go here */ 
     //HAL_Delay(5); // keep main loop light; this delay doesn't affect ISR timing 
-uint16_t output = (uint16_t)fminf(fabs(pid_out), 999.0f);
+  uint16_t output = (uint16_t)fminf(fabs(pid_out), 999.0f);
 
 if (fabs(pid_out) < MOTOR_DEADZONE)
 {
@@ -487,12 +456,13 @@ else
     }
 
     // Set PWM for both motors
-    uint16_t pwm_val = (uint16_t)fminf(fabs(pid_out), 999.0f);
+    uint16_t pwm_val = (uint16_t)fminf(fabs(pid_out), 500.0f);
     speed_motor(&htim3, TIM_CHANNEL_1, pwm_val);
     speed_motor(&htim3, TIM_CHANNEL_2, pwm_val);
 }
     print_flag = false; 
-    } }}
+    
+    } }
 
 /**
   * @brief System Clock Configuration
@@ -651,9 +621,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 47999;
+  htim2.Init.Prescaler = 7199;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 9;
+  htim2.Init.Period = 99;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
