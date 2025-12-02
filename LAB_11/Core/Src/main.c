@@ -251,6 +251,7 @@ gz_corrected = gz_raw - gz_offset;
 
 // --- Your chosen axes ---
 float roll_acc = atan2f(-ax_ms2, az_ms2) * 57.2958f;
+
 float roll_gyro = roll + gy_corrected * DT;
 
 // Complementary filter
@@ -273,10 +274,10 @@ float pid_controller (PID *pid, float dt, float PV){ //process variable
 
     
 
-    if(pid->CoT > 999)
-        pid->CoT = 999;
-    else if (pid->CoT < -999)
-        pid->CoT = -999;
+    if(pid->CoT > 500)
+        pid->CoT = 500;
+    else if (pid->CoT < -500)
+        pid->CoT = -500;
 
     return pid->CoT;
 }
@@ -409,15 +410,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
   PID pid = { 
     .set_point = 0.0f, //should be zero 
-    .kp= 29.0f, 
-    .ki = 12.1f, 
-    .kd = 17.4f, 
+    .kp= 19.0f, 
+    .ki = 0.19f, 
+    .kd = 0.019f, 
     .CoT =0.0f, 
     .prev_e_t = 0.0f, 
     .integral = 0.0f }; 
   /* Infinite loop: do printing and any background tasks here */ 
  while (1) { 
-  
+  if (print_flag){
   print_lsm("%f\r\n", roll); 
    //float dt = 0.01; 
    float pid_out = pid_controller(&pid, DT, roll); 
@@ -426,7 +427,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   //   speed((uint16_t)fabs(pid_out)); 
      /* other non-time-critical background tasks can go here */ 
     //HAL_Delay(5); // keep main loop light; this delay doesn't affect ISR timing 
-  uint16_t output = (uint16_t)fminf(fabs(pid_out), 999.0f);
+  // uint16_t output = (uint16_t)fminf(fabs(pid_out), 500.0f);
 
 if (fabs(pid_out) < MOTOR_DEADZONE)
 {
@@ -438,21 +439,23 @@ else
     // Set direction pins for both motors
     if(pid_out > 0)
     {
-        // Forward
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // Motor 1
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
-
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);   // Motor 2
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
-    }
-    else
-    {
         // Backward
         HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); // Motor 1
         HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
 
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); // Motor 2
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+    }
+    else
+    {
+
+      // Forward
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // Motor 1
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);   // Motor 2
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+        
     }
 
     // Set PWM for both motors
@@ -462,7 +465,7 @@ else
 }
     print_flag = false; 
     
-    } }
+    } }}
 
 /**
   * @brief System Clock Configuration
